@@ -1,31 +1,23 @@
 services:
   bot:
-    build: .
+    image: ghcr.io/smysle/1key-tg-bot:latest
     container_name: 1key-tg-bot
     restart: unless-stopped
     env_file:
       - .env
     environment:
       - TZ=Asia/Shanghai
-    # 如果需要 Redis
+    # 如果需要 Redis 持久化统计，取消下面注释
     # depends_on:
     #   - redis
-    networks:
-      - 1key-net
 
-  # 可选：Redis 用于持久化
+  # 可选：Redis 用于持久化统计数据
   # redis:
   #   image: redis:7-alpine
   #   container_name: 1key-redis
   #   restart: unless-stopped
   #   volumes:
   #     - redis-data:/data
-  #   networks:
-  #     - 1key-net
-
-networks:
-  1key-net:
-    driver: bridge
 
 # volumes:
 #   redis-data:
