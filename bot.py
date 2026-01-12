@@ -258,8 +258,10 @@ async def process_verification(
             await update_status_message(status_msg, verification_ids, results)
         
         # 对于 pending 状态的，继续轮询
-        while pending_tokens:
+        poll_count = 0
+        while pending_tokens and poll_count < settings.poll_max_attempts:
             await asyncio.sleep(3)  # 轮询间隔
+            poll_count += 1
             
             for vid, token in list(pending_tokens.items()):
                 try:
@@ -553,8 +555,9 @@ def main():
     application.add_error_handler(error_handler)
     
     # 启动 Bot
-    logger.info("Starting bot...")
+    logger.info("Bot starting...")
     logger.info(f"Admin user IDs: {settings.admin_user_ids}")
+    logger.info("Bot started with all commands registered")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
