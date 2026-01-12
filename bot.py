@@ -232,11 +232,10 @@ async def process_verification(
     if stats_storage:
         await stats_storage.record_submission(user_id, len(verification_ids))
     
-    # 发送处理中消息
+    # 发送处理中消息（不用 Markdown，避免转义问题）
     status_msg = await update.message.reply_text(
         f"🔄 开始验证 {len(verification_ids)} 个ID...\n\n"
-        + "\n".join([f"⏳ `{vid}`" for vid in verification_ids]),
-        parse_mode=ParseMode.MARKDOWN_V2,
+        + "\n".join([f"⏳ {vid}" for vid in verification_ids]),
     )
     
     results = {}
@@ -285,13 +284,10 @@ async def process_verification(
         await update_status_message(status_msg, verification_ids, results, final=True)
         
     except OneKeyAPIError as e:
-        await status_msg.edit_text(
-            f"❌ API 错误: {escape_markdown(e.message)}",
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
+        await status_msg.edit_text(f"❌ API 错误: {e.message}")
     except Exception as e:
         logger.exception("Verification error")
-        await status_msg.edit_text(f"❌ 验证出错: {escape_markdown(str(e))}", parse_mode=ParseMode.MARKDOWN_V2)
+        await status_msg.edit_text(f"❌ 验证出错: {str(e)}")
 
 
 async def update_status_message(
@@ -300,30 +296,27 @@ async def update_status_message(
     results: dict,
     final: bool = False,
 ):
-    """更新状态消息"""
+    """更新状态消息（纯文本，避免转义问题）"""
     lines = []
     
     if final:
-        lines.append("📋 *验证完成*\n")
+        lines.append("📋 验证完成\n")
     else:
-        lines.append("🔄 *验证中\\.\\.\\.*\n")
+        lines.append("🔄 验证中...\n")
     
     for vid in verification_ids:
         result = results.get(vid)
         if result:
             emoji = STATUS_EMOJI.get(result.current_step, "❓")
-            msg = escape_markdown(result.message[:50]) if result.message else ""
-            lines.append(f"{emoji} `{vid}`")
+            msg = result.message[:50] if result.message else ""
+            lines.append(f"{emoji} {vid}")
             if msg:
                 lines.append(f"   └ {msg}")
         else:
-            lines.append(f"⏳ `{vid}`")
+            lines.append(f"⏳ {vid}")
     
     try:
-        await message.edit_text(
-            "\n".join(lines),
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
+        await message.edit_text("\n".join(lines))
     except Exception as e:
         logger.warning(f"Failed to update message: {e}")
 
