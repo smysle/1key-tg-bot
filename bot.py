@@ -85,28 +85,28 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_admin:
         admin_section = """
 *管理员命令:*
-• /stats \\- 全局统计
-• /stats24 \\- 24小时统计
-• /user <id> \\- 查看用户统计
+• /stats \- 全局统计
+• /stats24 \- 24小时统计
+• /user \- 查看用户统计
 """
     
     welcome_text = f"""
 🎓 *1Key Google 学生认证 Bot*
 
-欢迎使用！本 Bot 帮助您批量验证 Google 学生认证。
+欢迎使用！本 Bot 帮助您批量验证 Google 学生认证\.
 
 *使用方法:*
-1️⃣ 发送 /verify <链接或ID> 开始验证
+1️⃣ 发送 /verify 开始验证
 2️⃣ 或直接发送验证链接/ID（每行一个）
 3️⃣ 使用 /batch 一次验证多个（最多5个）
 
 *命令列表:*
-• /verify \\- 提交单个或多个验证
-• /batch \\- 批量验证
-• /status \\- 查询验证状态
-• /cancel \\- 取消验证
-• /mystats \\- 个人统计
-• /help \\- 查看帮助
+• /verify \- 提交单个或多个验证
+• /batch \- 批量验证
+• /status \- 查询验证状态
+• /cancel \- 取消验证
+• /mystats \- 个人统计
+• /help \- 查看帮助
 {admin_section}
 *Tips:*
 • 支持直接粘贴 Google One 链接
@@ -125,23 +125,23 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📖 *帮助信息*
 
 *验证命令:*
-`/verify <链接或ID>` \\- 验证单个
-`/batch <链接1> <链接2> \\.\\.\\.` \\- 批量验证
+`/verify` \- 验证单个或多个
+`/batch` \- 批量验证（最多5个）
 
 *查询和管理:*
-`/status <ID>` \\- 查询状态
-`/cancel <ID>` \\- 取消验证
-`/mystats` \\- 个人统计
+`/status` \- 查询状态
+`/cancel` \- 取消验证
+`/mystats` \- 个人统计
 
 *支持的输入格式:*
-• 完整链接: `https://one\\.google\\.com/verify\\?\\.\\.\\.\\.`
-• 验证ID: `6931007a35dfed1a6931adac`
+• 完整链接或验证ID都可以
+• 验证ID示例: `6931007a35dfed1a6931adac`
 
 *状态说明:*
-⏳ pending \\- 处理中
-✅ success \\- 成功
-❌ error \\- 失败
-🚫 cancelled \\- 已取消
+⏳ pending \- 处理中
+✅ success \- 成功
+❌ error \- 失败
+🚫 cancelled \- 已取消
 
 *注意事项:*
 • 每个 IP 只能使用一次
@@ -178,9 +178,8 @@ async def verify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
             "❌ 请提供验证链接或ID\n\n"
-            "用法: `/verify <链接或ID>`\n"
-            "示例: `/verify 6931007a35dfed1a6931adac`",
-            parse_mode=ParseMode.MARKDOWN_V2,
+            "用法: /verify 链接或ID\n"
+            "示例: /verify 6931007a35dfed1a6931adac",
         )
         return
     
@@ -200,8 +199,7 @@ async def batch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
             "❌ 请提供验证链接或ID（最多5个）\n\n"
-            "用法: `/batch <链接1> <链接2> \\.\\.\\.`",
-            parse_mode=ParseMode.MARKDOWN_V2,
+            "用法: /batch 链接1 链接2 ...",
         )
         return
     
@@ -335,8 +333,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
             "❌ 请提供验证ID或 check token\n\n"
-            "用法: `/status <ID>`",
-            parse_mode=ParseMode.MARKDOWN_V2,
+            "用法: /status ID",
         )
         return
     
@@ -366,8 +363,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
             "❌ 请提供验证ID\n\n"
-            "用法: `/cancel <ID>`",
-            parse_mode=ParseMode.MARKDOWN_V2,
+            "用法: /cancel ID",
         )
         return
     
@@ -465,8 +461,7 @@ async def user_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """处理 /user <id> 命令 - 查看指定用户统计（管理员）"""
     if not context.args:
         await update.message.reply_text(
-            "❌ 请提供用户ID\n\n用法: `/user <user_id>`",
-            parse_mode=ParseMode.MARKDOWN_V2,
+            "❌ 请提供用户ID\n\n用法: /user 用户ID",
         )
         return
     
