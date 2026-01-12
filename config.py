@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field
-from typing import Optional, List
+from pydantic import Field, field_validator
+from typing import Optional, List, Union
 
 
 class Settings(BaseSettings):
@@ -32,17 +32,23 @@ class Settings(BaseSettings):
     # Rate limiting (optional)
     user_daily_limit: int = Field(default=0, description="Max submissions per user per day (0=unlimited)")
     
+    @field_validator('admin_user_ids', mode='before')
+    @classmethod
+    def parse_admin_ids(cls, v):
+        """解析管理员ID，支持逗号分隔的字符串或单个数字"""
+        if isinstance(v, list):
+            return v
+        if isinstance(v, int):
+            return [v]
+        if isinstance(v, str):
+            if not v.strip():
+                return [6997010290]  # 默认管理员
+            return [int(x.strip()) for x in v.split(",") if x.strip()]
+        return [6997010290]
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
-        
-        @classmethod
-        def parse_env_var(cls, field_name: str, raw_val: str):
-            if field_name == "admin_user_ids":
-                if not raw_val:
-                    return [6997010290]  # 默认管理员
-                return [int(x.strip()) for x in raw_val.split(",") if x.strip()]
-            return raw_val
 
 
 settings = Settings()
