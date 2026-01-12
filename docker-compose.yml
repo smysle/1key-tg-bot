@@ -1,15 +1,45 @@
+version: '3.8'
+
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: 1key-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   bot:
     image: ghcr.io/smysle/1key-tg-bot:latest
     container_name: 1key-tg-bot
     restart: unless-stopped
-    env_file:
-      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
     environment:
-      - TZ=Asia/Shanghai
-    networks:
-      - grok2api_default
+      - TG_BOT_TOKEN=${TG_BOT_TOKEN}
+      - ONEKEY_API_KEY=${ONEKEY_API_KEY}
+      - ONEKEY_BASE_URL=${ONEKEY_BASE_URL:-https://batch.1key.me}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS:-6997010290}
+      # Redis 配置
+      - REDIS_URL=redis://redis:6379
+      # 高并发配置
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-50}
+      - MAX_CONCURRENT_POLLS=${MAX_CONCURRENT_POLLS:-100}
+      - POLL_INTERVAL=${POLL_INTERVAL:-1.5}
+      - CONNECTION_POOL_SIZE=${CONNECTION_POOL_SIZE:-50}
+      - MAX_RETRIES=${MAX_RETRIES:-3}
+      - REQUEST_TIMEOUT=${REQUEST_TIMEOUT:-120}
+
+volumes:
+  redis_data:
 
 networks:
-  grok2api_default:
+  default:
+    name: grok2api_default
     external: true
