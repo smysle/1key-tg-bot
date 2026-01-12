@@ -5,3 +5,4 @@ pydantic-settings==2.1.0
 python-dotenv==1.0.1
 redis==5.0.1
 curl_cffi==0.7.4
+h2>=4.0.0
