@@ -1,4 +1,3 @@
-
 """
 1Key Google 学生认证 Telegram Bot
 优化版: 并发轮询、优雅关闭、更好的错误处理
