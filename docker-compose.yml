@@ -5,7 +5,7 @@ services:
     image: redis:7-alpine
     container_name: 1key-redis
     restart: unless-stopped
-    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru --appendonly yes
     volumes:
       - redis_data:/data
     healthcheck:
@@ -26,9 +26,7 @@ services:
       - ONEKEY_API_KEY=${ONEKEY_API_KEY}
       - ONEKEY_BASE_URL=${ONEKEY_BASE_URL:-https://batch.1key.me}
       - ADMIN_USER_IDS=${ADMIN_USER_IDS:-6997010290}
-      # Redis 配置
       - REDIS_URL=redis://redis:6379
-      # 高并发配置
       - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-50}
       - MAX_CONCURRENT_POLLS=${MAX_CONCURRENT_POLLS:-100}
       - POLL_INTERVAL=${POLL_INTERVAL:-1.5}
