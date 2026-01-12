@@ -1,6 +1,6 @@
 """
 CSRF Token 管理模块
-通过正则匹配从 1Key 页面获取 CSRF Token
+使用 curl_cffi 绕过 Cloudflare 保护
 """
 import re
 import asyncio
@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-import httpx
+from curl_cffi.requests import AsyncSession
 
 from config import settings
 
@@ -20,44 +20,33 @@ class CSRFTokenManager:
     
     def __init__(self):
         self._token: Optional[str] = None
+        self._cookies: dict = {}
         self._last_refresh: Optional[datetime] = None
         self._lock = asyncio.Lock()
-        self._client: Optional[httpx.AsyncClient] = None
+        self._session: Optional[AsyncSession] = None
     
-    @property
-    def _http_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                timeout=30.0,
-                follow_redirects=True,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "Cache-Control": "no-cache",
-                    "Pragma": "no-cache",
-                    "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-                    "Sec-Ch-Ua-Mobile": "?0",
-                    "Sec-Ch-Ua-Platform": '"Windows"',
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                    "Sec-Fetch-User": "?1",
-                    "Upgrade-Insecure-Requests": "1",
-                }
-            )
-        return self._client
-        return self._client
+    async def _get_session(self) -> AsyncSession:
+        if self._session is None:
+            self._session = AsyncSession(impersonate="chrome131")
+        return self._session
     
     async def _fetch_csrf_token(self) -> str:
         """从页面获取 CSRF Token"""
         url = settings.onekey_base_url
         
         try:
-            response = await self._http_client.get(url)
+            session = await self._get_session()
+            response = await session.get(url)
+            
+            if response.status_code == 403:
+                raise ValueError(f"Access denied (403) - Cloudflare may be blocking")
+            
             response.raise_for_status()
             html = response.text
+            
+            # 保存 cookies 供后续请求使用
+            self._cookies = dict(response.cookies)
+            logger.info(f"Got cookies: {list(self._cookies.keys())}")
             
             # 尝试多种正则模式匹配 CSRF Token
             patterns = [
@@ -65,8 +54,8 @@ class CSRFTokenManager:
                 r'CSRF_TOKEN["\']?\s*[:=]\s*["\']([^"\']+)["\']',
                 r'csrf[_-]?token["\']?\s*[:=]\s*["\']([^"\']+)["\']',
                 r'<meta\s+name=["\']csrf-token["\']\s+content=["\']([^"\']+)["\']',
-                r'csrfToken["\']?\s*[:=]\s*["\']([^"\']+)["\']',  # from user suggestion
-                r'_csrf["\']?\s*[:=]\s*["\']([^"\']+)["\']',      # from user suggestion
+                r'csrfToken["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+                r'_csrf["\']?\s*[:=]\s*["\']([^"\']+)["\']',
             ]
             
             for pattern in patterns:
@@ -81,18 +70,18 @@ class CSRFTokenManager:
             scripts = re.findall(script_pattern, html, re.DOTALL | re.IGNORECASE)
             
             for script in scripts:
-                for pattern in patterns[:2]:  # 只用前两个模式
+                for pattern in patterns[:2]:
                     match = re.search(pattern, script, re.IGNORECASE)
                     if match:
                         token = match.group(1)
                         logger.info(f"Found CSRF token in script: {token[:20]}...")
                         return token
             
+            # 调试：输出页面更多内容
+            logger.warning(f"CSRF token not found. Page length: {len(html)}")
+            logger.warning(f"Page preview: {html[:2000]}")
             raise ValueError("CSRF token not found in page")
             
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error fetching CSRF token: {e}")
-            raise
         except Exception as e:
             logger.error(f"Error fetching CSRF token: {e}")
             raise
@@ -117,17 +106,23 @@ class CSRFTokenManager:
             
             return self._token
     
+    def get_cookies(self) -> dict:
+        """获取已保存的 cookies"""
+        return self._cookies.copy()
+    
     async def invalidate(self):
         """使当前 token 失效，下次获取时强制刷新"""
         async with self._lock:
             self._token = None
             self._last_refresh = None
+            self._cookies = {}
             logger.info("CSRF token invalidated")
     
     async def close(self):
         """关闭 HTTP 客户端"""
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
+        if self._session:
+            await self._session.close()
+            self._session = None
 
 
 # 全局单例
