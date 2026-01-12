@@ -39,13 +39,12 @@ class OneKeyClient:
         self._client: Optional[httpx.AsyncClient] = None
         self._request_semaphore: Optional[asyncio.Semaphore] = None
         self._poll_semaphore: Optional[asyncio.Semaphore] = None
-        self._pending_ids: Set[str] = set()  # 正在处理的ID去重
+        self._pending_ids: Set[str] = set()
         self._pending_lock = asyncio.Lock()
     
     @property
     def _http_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
-            # 优化连接池配置
             limits = httpx.Limits(
                 max_keepalive_connections=settings.connection_pool_size,
                 max_connections=settings.connection_pool_size + 10,
@@ -55,7 +54,7 @@ class OneKeyClient:
                 timeout=httpx.Timeout(settings.request_timeout, connect=10.0),
                 follow_redirects=True,
                 limits=limits,
-                http2=True,  # 启用 HTTP/2
+                http2=True,
                 headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
                     "Accept": "*/*",
@@ -75,34 +74,24 @@ class OneKeyClient:
     
     @property
     def request_semaphore(self) -> asyncio.Semaphore:
-        """请求并发控制信号量"""
         if self._request_semaphore is None:
             self._request_semaphore = asyncio.Semaphore(settings.max_concurrent_requests)
         return self._request_semaphore
     
     @property
     def poll_semaphore(self) -> asyncio.Semaphore:
-        """轮询并发控制信号量"""
         if self._poll_semaphore is None:
             self._poll_semaphore = asyncio.Semaphore(settings.max_concurrent_polls)
         return self._poll_semaphore
     
     async def _get_headers_with_csrf(self) -> dict:
-        """获取包含 CSRF Token 的请求头"""
         csrf_token = await csrf_manager.get_token()
         return {
             "Content-Type": "application/json",
             "X-CSRF-Token": csrf_token,
         }
     
-    async def _retry_request(
-        self,
-        request_func: Callable,
-        *args,
-        max_retries: Optional[int] = None,
-        **kwargs
-    ):
-        """带重试的请求包装器"""
+    async def _retry_request(self, request_func: Callable, *args, max_retries: Optional[int] = None, **kwargs):
         max_retries = max_retries or settings.max_retries
         delay = settings.retry_delay
         
@@ -115,7 +104,6 @@ class OneKeyClient:
                 status_code = getattr(e, 'response', None)
                 status_code = status_code.status_code if status_code else None
                 
-                # 不可重试的错误
                 if status_code in (400, 401, 403, 404):
                     raise
                 
@@ -127,7 +115,6 @@ class OneKeyClient:
         raise last_error
     
     async def check_duplicate(self, verification_id: str) -> bool:
-        """检查ID是否正在处理中"""
         async with self._pending_lock:
             if verification_id in self._pending_ids:
                 return True
@@ -135,14 +122,11 @@ class OneKeyClient:
             return False
     
     async def remove_pending(self, verification_id: str):
-        """移除处理中的ID"""
         async with self._pending_lock:
             self._pending_ids.discard(verification_id)
     
     @staticmethod
     def extract_verification_id(url_or_id: str) -> str:
-        """从 URL 或直接的 ID 中提取 verification ID"""
-        # 如果已经是纯 ID（24位十六进制）
         if re.match(r'^[a-f0-9]{24}$', url_or_id, re.IGNORECASE):
             return url_or_id.lower()
         
@@ -166,10 +150,6 @@ class OneKeyClient:
         use_lucky: bool = False,
         program_id: str = "",
     ) -> AsyncGenerator[VerificationResult, None]:
-        """
-        批量验证（SSE 流式响应）
-        使用信号量控制并发
-        """
         if len(verification_ids) > settings.max_batch_size:
             raise ValueError(f"每批最多 {settings.max_batch_size} 个验证ID")
         
@@ -177,7 +157,6 @@ class OneKeyClient:
         
         async with self.request_semaphore:
             headers = await self._get_headers_with_csrf()
-            
             payload = {
                 "verificationIds": verification_ids,
                 "hCaptchaToken": settings.onekey_api_key,
@@ -188,25 +167,18 @@ class OneKeyClient:
             logger.info(f"Starting batch verification for {len(verification_ids)} IDs")
             
             try:
-                async with self._http_client.stream(
-                    "POST",
-                    url,
-                    json=payload,
-                    headers=headers,
-                ) as response:
+                async with self._http_client.stream("POST", url, json=payload, headers=headers) as response:
                     if response.status_code == 403:
                         await csrf_manager.invalidate()
-                        raise OneKeyAPIError("CSRF token expired, please retry", 403, retryable=True)
+                        raise OneKeyAPIError("CSRF token expired", 403, retryable=True)
                     
                     response.raise_for_status()
                     
                     async for line in response.aiter_lines():
-                        if not line or not line.startswith("data:"):
-                            continue
+                        if not line or not line.startswith("data:"): continue
                         
                         data_str = line[5:].strip()
-                        if not data_str:
-                            continue
+                        if not data_str: continue
                         
                         try:
                             data = json.loads(data_str)
@@ -216,8 +188,72 @@ class OneKeyClient:
                                 message=data.get("message", ""),
                                 checkToken=data.get("checkToken"),
                             )
+                            if on_result: on_result(result)
+                            yield result
+                        except json.JSONDecodeError:
+                            continue
                             
-                            if on_result:
-                                on_result(result)
-                            
-                            
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP error: {e}")
+                raise OneKeyAPIError(f"HTTP error: {e.response.status_code}", e.response.status_code)
+            except httpx.RequestError as e:
+                logger.error(f"Request error: {e}")
+                raise OneKeyAPIError(f"Request error: {str(e)}", retryable=True)
+    
+    async def check_status(self, check_token: str) -> CheckStatusResponse:
+        url = f"{settings.onekey_base_url}/api/check-status"
+        async with self.poll_semaphore:
+            try:
+                response = await self._retry_request(
+                    self._http_client.post,
+                    url,
+                    json={"checkToken": check_token},
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+                data = response.json()
+                return CheckStatusResponse(
+                    verificationId=data.get("verificationId", ""),
+                    currentStep=data.get("currentStep", "pending"),
+                    message=data.get("message", ""),
+                    checkToken=data.get("checkToken"),
+                )
+            except httpx.HTTPStatusError as e:
+                raise OneKeyAPIError(f"HTTP error: {e.response.status_code}", e.response.status_code)
+            except httpx.RequestError as e:
+                raise OneKeyAPIError(f"Request error: {str(e)}", retryable=True)
+
+    async def cancel_verification(self, verification_id: str) -> CancelResponse:
+        url = f"{settings.onekey_base_url}/api/cancel"
+        async with self.request_semaphore:
+            headers = await self._get_headers_with_csrf()
+            try:
+                response = await self._retry_request(
+                    self._http_client.post,
+                    url,
+                    json={"verificationId": verification_id},
+                    headers=headers,
+                )
+                if response.status_code == 403:
+                    await csrf_manager.invalidate()
+                    raise OneKeyAPIError("CSRF token expired", 403, retryable=True)
+                
+                response.raise_for_status()
+                data = response.json()
+                return CancelResponse(
+                    verificationId=data.get("verificationId", ""),
+                    currentStep=data.get("currentStep", "error"),
+                    message=data.get("message", ""),
+                    alreadyCancelled=data.get("alreadyCancelled", False),
+                )
+            except httpx.HTTPStatusError as e:
+                raise OneKeyAPIError(f"HTTP error: {e.response.status_code}", e.response.status_code)
+            except httpx.RequestError as e:
+                raise OneKeyAPIError(f"Request error: {str(e)}", retryable=True)
+    
+    async def close(self):
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+        await csrf_manager.close()
+
+onekey_client = OneKeyClient()
