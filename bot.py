@@ -1,3 +1,8 @@
+
+"""
+1Key Google 学生认证 Telegram Bot
+优化版: 并发轮询、优雅关闭、更好的错误处理
+"""
 import re
 import asyncio
 import logging
@@ -51,22 +56,32 @@ def admin_required(func):
 
 async def start_command(update, context):
     is_admin = update.effective_user.id in settings.admin_user_ids
-    admin_section = "
-*管理员命令:*
-• /stats \- 统计" if is_admin else ""
-    await update.message.reply_text(f"🎓 *1Key Bot*
-{admin_section}", parse_mode=ParseMode.MARKDOWN_V2)
+    admin_section = "\n*管理员命令:*\n• /stats \- 统计" if is_admin else ""
+    await update.message.reply_text(f"🎓 *1Key Bot*\n{admin_section}", parse_mode=ParseMode.MARKDOWN_V2)
+
+async def help_command(update, context):
+    text = "*命令列表:*\n/verify \- 验证\n/batch \- 批量\n/status \- 状态\n/cancel \- 取消\n/mystats \- 个人统计"
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
 
 def extract_ids_from_text(text: str) -> List[str]:
     ids = []
-    parts = re.split(r'[\s
-]+', text.strip())
+    parts = re.split(r'[\s\n]+', text.strip())
     for part in parts:
         try:
             vid = OneKeyClient.extract_verification_id(part)
             if vid and vid not in ids: ids.append(vid)
         except: continue
     return ids
+
+async def verify_command(update, context):
+    if not context.args: return await update.message.reply_text("❌ 用法: /verify <ID>")
+    vids = extract_ids_from_text(" ".join(context.args))
+    if vids: await process_verification(update, context, vids)
+
+async def batch_command(update, context):
+    if not context.args: return await update.message.reply_text("❌ 用法: /batch <ID1> <ID2>...")
+    vids = extract_ids_from_text(" ".join(context.args))
+    if vids: await process_verification(update, context, vids[:settings.max_batch_size])
 
 async def poll_single_status(vid: str, token: str, results: Dict[str, VerificationResult]) -> tuple:
     try:
@@ -109,10 +124,35 @@ async def update_status_message(msg, vids, results, final=False):
         e = STATUS_EMOJI.get(r.current_step, "❓") if r else "⏳"
         m = f" - {r.message[:30]}" if r and r.message else ""
         lines.append(f"{e} {v}{m}")
-    with suppress(Exception): await msg.edit_text("
-".join(lines))
+    with suppress(Exception): await msg.edit_text("\n".join(lines))
+
+async def status_command(update, context):
+    if not context.args: return await update.message.reply_text("❌ 用法: /status <ID>")
+    try:
+        res = await onekey_client.check_status(context.args[0])
+        await update.message.reply_text(f"状态: {res.current_step.value}\n消息: {res.message}")
+    except Exception as e: await update.message.reply_text(f"❌ 错误: {e}")
+
+async def cancel_command(update, context):
+    if not context.args: return await update.message.reply_text("❌ 用法: /cancel <ID>")
+    try:
+        res = await onekey_client.cancel_verification(context.args[0])
+        await update.message.reply_text("✅ 已取消" if not res.already_cancelled else "⚠️ 已取消过")
+    except Exception as e: await update.message.reply_text(f"❌ 错误: {e}")
+
+async def mystats_command(update, context):
+    if not stats_storage: return
+    s = await stats_storage.get_user_stats(update.effective_user.id)
+    await update.message.reply_text(f"📊 统计\n总计: {s['total']}\n24h: {s['last_24h']}")
+
+@admin_required
+async def stats_command(update, context):
+    if not stats_storage: return
+    s = await stats_storage.get_all_stats()
+    await update.message.reply_text(f"📊 总提交: {s['total_submissions']}\n总用户: {s['total_users']}")
 
 async def handle_message(update, context):
+    if not update.message or not update.message.text: return
     vids = extract_ids_from_text(update.message.text)
     if vids: await process_verification(update, context, vids[:settings.max_batch_size])
 
@@ -120,8 +160,18 @@ def main():
     global stats_storage
     stats_storage = create_stats_storage(settings.redis_url)
     app = Application.builder().token(settings.tg_bot_token).build()
+    
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("verify", verify_command))
+    app.add_handler(CommandHandler("batch", batch_command))
+    app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("cancel", cancel_command))
+    app.add_handler(CommandHandler("mystats", mystats_command))
+    app.add_handler(CommandHandler("stats", stats_command))
+    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    logger.info("Bot started with all commands registered")
     app.run_polling()
 
 if __name__ == "__main__": main()
