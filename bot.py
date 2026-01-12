@@ -33,6 +33,7 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 stats_storage = None
 STATUS_EMOJI = {
+    VerificationStep.UNKNOWN: "❓",
     VerificationStep.PENDING: "⏳",
     VerificationStep.SUCCESS: "✅",
     VerificationStep.ERROR: "❌",

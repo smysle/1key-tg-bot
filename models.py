@@ -2,8 +2,8 @@
 数据模型定义
 """
 from enum import Enum
-from typing import Optional, List
-from pydantic import BaseModel, Field
+from typing import Optional, List, Any
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 
 
@@ -13,6 +13,7 @@ class VerificationStep(str, Enum):
     SUCCESS = "success"
     ERROR = "error"
     CANCELLED = "cancelled"
+    UNKNOWN = "unknown"  # 处理未知状态
 
 
 class BatchRequest(BaseModel):
@@ -33,6 +34,18 @@ class VerificationResult(BaseModel):
     message: str = ""
     check_token: Optional[str] = Field(default=None, alias="checkToken")
     
+    @field_validator('current_step', mode='before')
+    @classmethod
+    def validate_step(cls, v: Any) -> VerificationStep:
+        if isinstance(v, VerificationStep):
+            return v
+        if not v or v == "":
+            return VerificationStep.UNKNOWN
+        try:
+            return VerificationStep(v)
+        except ValueError:
+            return VerificationStep.UNKNOWN
+    
     class Config:
         populate_by_name = True
 
@@ -52,6 +65,18 @@ class CheckStatusResponse(BaseModel):
     message: str = ""
     check_token: Optional[str] = Field(default=None, alias="checkToken")
     
+    @field_validator('current_step', mode='before')
+    @classmethod
+    def validate_step(cls, v: Any) -> VerificationStep:
+        if isinstance(v, VerificationStep):
+            return v
+        if not v or v == "":
+            return VerificationStep.UNKNOWN
+        try:
+            return VerificationStep(v)
+        except ValueError:
+            return VerificationStep.UNKNOWN
+    
     class Config:
         populate_by_name = True
 
@@ -70,6 +95,18 @@ class CancelResponse(BaseModel):
     current_step: VerificationStep = Field(..., alias="currentStep")
     message: str = ""
     already_cancelled: bool = Field(default=False, alias="alreadyCancelled")
+    
+    @field_validator('current_step', mode='before')
+    @classmethod
+    def validate_step(cls, v: Any) -> VerificationStep:
+        if isinstance(v, VerificationStep):
+            return v
+        if not v or v == "":
+            return VerificationStep.ERROR
+        try:
+            return VerificationStep(v)
+        except ValueError:
+            return VerificationStep.ERROR
     
     class Config:
         populate_by_name = True
