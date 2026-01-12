@@ -7,17 +7,9 @@ services:
       - .env
     environment:
       - TZ=Asia/Shanghai
-    # 如果需要 Redis 持久化统计，取消下面注释
-    # depends_on:
-    #   - redis
+    networks:
+      - grok2api_default
 
-  # 可选：Redis 用于持久化统计数据
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: 1key-redis
-  #   restart: unless-stopped
-  #   volumes:
-  #     - redis-data:/data
-
-# volumes:
-#   redis-data:
+networks:
+  grok2api_default:
+    external: true
