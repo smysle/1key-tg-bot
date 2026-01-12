@@ -30,7 +30,7 @@ class CSRFTokenManager:
     
     async def _get_session(self) -> AsyncSession:
         if self._session is None:
-            self._session = AsyncSession(impersonate="chrome131")
+            self._session = AsyncSession(impersonate="chrome120")
         return self._session
     
     async def _fetch_csrf_token(self) -> Tuple[str, dict]:
